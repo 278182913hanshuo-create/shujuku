@@ -177,7 +177,9 @@ if check_login():
             df = pd.DataFrame(data)
             
             # 调整列顺序（如果有数据）
-            cols = ["供应商", "设备名称", "型号", "单价", "货币", "联系人", "录入时间", "备注", "_record_id"]
+            # 注意：这里的列名必须与飞书多维表格中的列名完全一致
+            cols = ["序号", "项目地点", "设备类型", "设备数量", "单价", "中标合同额", "供货日期", "采购建议", "供应商", "询价单价", "询价总价", "联系人", "录入时间", "备注", "_record_id"]
+            
             # 确保列存在，防止飞书字段名不匹配报错
             available_cols = [c for c in cols if c in df.columns]
             df = df[available_cols]
@@ -187,12 +189,14 @@ if check_login():
             with col1:
                 search_supplier = st.text_input("🔍 搜索供应商")
             with col2:
-                search_equipment = st.text_input("🔍 搜索设备")
+                search_equipment = st.text_input("🔍 搜索设备类型")
             
             if search_supplier:
                 df = df[df['供应商'].astype(str).str.contains(search_supplier, case=False)]
             if search_equipment:
-                df = df[df['设备名称'].astype(str).str.contains(search_equipment, case=False)]
+                # 兼容旧数据，如果'设备类型'列不存在则不报错
+                if '设备类型' in df.columns:
+                    df = df[df['设备类型'].astype(str).str.contains(search_equipment, case=False)]
                 
             # 展示表格 (隐藏 record_id)
             display_df = df.drop(columns=["_record_id"], errors='ignore')
@@ -205,7 +209,10 @@ if check_login():
                     record_options = df.to_dict('records')
                     # 格式化显示函数
                     def format_func(option):
-                        return f"{option.get('供应商')} - {option.get('设备名称')} (￥{option.get('单价')})"
+                        supplier = option.get('供应商', '未命名')
+                        device = option.get('设备类型', '未知设备')
+                        price = option.get('单价', 0)
+                        return f"{supplier} - {device} (￥{price})"
                     
                     selected_record = st.selectbox("选择要删除的记录", options=record_options, format_func=format_func)
                     
@@ -225,35 +232,58 @@ if check_login():
         st.title("➕ 录入新报价")
         
         with st.form("feishu_entry"):
-            c1, c2 = st.columns(2)
+            # 第一行
+            c1, c2, c3 = st.columns(3)
             with c1:
-                supplier = st.text_input("供应商")
-                equipment = st.text_input("设备名称")
-                model = st.text_input("型号/规格")
+                seq_num = st.text_input("序号")
+                project_loc = st.text_input("项目地点")
+                device_type = st.text_input("设备类型")
             with c2:
-                price = st.number_input("单价", min_value=0.0)
-                currency = st.selectbox("货币", ["CNY", "USD", "EUR"])
+                supplier = st.text_input("供应商")
                 contact = st.text_input("联系人")
+                supply_date = st.text_input("供货日期 (选填)")
+            with c3:
+                device_count = st.number_input("设备数量", min_value=0, step=1)
+                purchase_advice = st.text_input("采购建议")
+            
+            st.markdown("---")
+            # 第二行：价格相关
+            c4, c5, c6, c7 = st.columns(4)
+            with c4:
+                unit_price = st.number_input("单价 (中标)", min_value=0.0)
+            with c5:
+                contract_amt = st.number_input("中标合同额", min_value=0.0)
+            with c6:
+                inquiry_unit = st.number_input("询价单价", min_value=0.0)
+            with c7:
+                inquiry_total = st.number_input("询价总价", min_value=0.0)
             
             note = st.text_area("备注")
             submitted = st.form_submit_button("🚀 提交到飞书")
             
             if submitted:
-                if supplier and equipment and price > 0:
+                # 必填项检查 (根据实际情况调整)
+                if supplier and device_type:
                     payload = {
+                        "序号": seq_num,
+                        "项目地点": project_loc,
+                        "设备类型": device_type,
+                        "设备数量": device_count,
+                        "单价": unit_price,
+                        "中标合同额": contract_amt,
+                        "供货日期": supply_date,
+                        "采购建议": purchase_advice,
                         "供应商": supplier,
-                        "设备名称": equipment,
-                        "型号": model,
-                        "单价": price,
-                        "货币": currency,
+                        "询价单价": inquiry_unit,
+                        "询价总价": inquiry_total,
                         "联系人": contact,
                         "备注": note,
                         "录入时间": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     }
                     if connector.add_record(payload):
-                        st.success(f"已同步至飞书：{equipment}")
+                        st.success(f"已同步至飞书：{supplier} - {device_type}")
                 else:
-                    st.warning("请填写完整信息")
+                    st.warning("请至少填写 '供应商' 和 '设备类型'")
 
     # --- 功能 3: 价格分析 ---
     elif menu == "📈 价格分析":
@@ -261,7 +291,15 @@ if check_login():
         data = connector.get_records()
         if data:
             df = pd.DataFrame(data)
-            if "单价" in df.columns and "设备名称" in df.columns:
-                st.bar_chart(df, x="设备名称", y="单价")
+            # 简单的图表分析
+            if "单价" in df.columns and "设备类型" in df.columns:
+                st.subheader("设备类型 vs 中标单价")
+                # 确保数据是数值型
+                df['单价'] = pd.to_numeric(df['单价'], errors='coerce')
+                st.bar_chart(df, x="设备类型", y="单价")
+            elif "询价单价" in df.columns and "设备类型" in df.columns:
+                st.subheader("设备类型 vs 询价单价")
+                df['询价单价'] = pd.to_numeric(df['询价单价'], errors='coerce')
+                st.bar_chart(df, x="设备类型", y="询价单价")
             else:
-                st.info("数据字段不足，无法生成图表。请确保飞书表头包含 '设备名称' 和 '单价'。")
+                st.info("数据字段不足，无法生成图表。请确保飞书表头包含 '设备类型' 和 '单价'。")
