@@ -12,54 +12,20 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- 关键修改：父隐子显策略 ---
-# 放弃强制移动位置，改用“隐藏 Header 所有子元素，但单独显示开关”的策略。
-# 这样开关会保留在原生位置，兼容性最好。
+# --- 样式还原 ---
+# 移除了所有对 Header、工具栏和装饰条的隐藏代码。
+# 现在界面将恢复 Streamlit 的默认外观，确保侧边栏开关和功能菜单 100% 可用。
 hide_streamlit_style = """
 <style>
-    /* 1. 隐藏顶部装饰条 */
-    [data-testid="stDecoration"] {
-        display: none;
-    }
-    
-    /* 2. 隐藏底部 Footer */
+    /* 仅隐藏底部的 "Made with Streamlit" Footer */
     footer {
-        display: none !important;
+        visibility: hidden;
     }
     
-    /* 3. 隐藏 Deploy 按钮 */
+    /* 仅隐藏右上角的 Deploy 按钮 (生产环境通常不需要用户看到此按钮) */
     .stDeployButton {
         display: none;
     }
-
-    /* 4. 【核心策略】处理顶部 Header */
-    
-    /* 第一步：让 Header 容器本身透明且不拦截点击 */
-    header[data-testid="stHeader"] {
-        background: transparent !important;
-        pointer-events: none !important; /* 让鼠标点击穿透 Header 空白处 */
-    }
-
-    /* 第二步：隐藏 Header 内部的【所有】子元素 (包括右侧工具栏、菜单等) */
-    header[data-testid="stHeader"] > * {
-        visibility: hidden !important;
-    }
-
-    /* 第三步：【唯独】把侧边栏开关显示出来 */
-    /* 使用 visibility: visible 覆盖父级的 hidden */
-    header[data-testid="stHeader"] [data-testid="stSidebarCollapsedControl"],
-    header[data-testid="stHeader"] [data-testid="collapsedControl"] {
-        visibility: visible !important;
-        display: block !important;
-        pointer-events: auto !important; /* 恢复开关的点击功能 */
-        
-        /* 确保颜色是深色，防止背景白字看不清 */
-        color: #31333F !important; 
-        
-        /* 提高层级，防止被隐藏的透明元素覆盖 */
-        z-index: 999999 !important;
-    }
-
 </style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
