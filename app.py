@@ -9,39 +9,27 @@ import time
 st.set_page_config(
     page_title="北京富达采购成本数据库",
     layout="wide",
-    initial_sidebar_state="expanded"  # <--- 修复：默认直接展开侧边栏，不再隐藏
+    initial_sidebar_state="expanded"  # <--- 保持：默认展开侧边栏
 )
 
-# --- 关键修改：CSS 样式优化 ---
-# 确保侧边栏开关可见，同时隐藏无关的系统按钮
+# --- 关键修改：CSS 样式大瘦身 ---
+# 之前的写法太激进，导致把侧边栏容器也隐藏了。
+# 现在我们只隐藏特定的元素，不再隐藏整个工具栏容器。
 hide_streamlit_style = """
 <style>
-    /* 1. 隐藏右上角的“三道杠”系统菜单 */
+    /* 1. 隐藏右上角的“三道杠”菜单 (Settings, Print等) */
     #MainMenu {visibility: hidden;}
     
-    /* 2. 隐藏底部 Footer */
+    /* 2. 隐藏底部的 "Made with Streamlit" */
     footer {visibility: hidden;}
     
-    /* 3. 隐藏 Deploy 按钮 */
+    /* 3. 隐藏右上角的 Deploy (部署) 按钮 */
     .stDeployButton {display:none;}
     
-    /* 4. 隐藏顶部装饰条 */
+    /* 4. 隐藏顶部的彩色装饰条 */
     [data-testid="stDecoration"] {display:none;}
     
-    /* 5. 隐藏右上角工具栏 */
-    [data-testid="stToolbar"] {visibility: hidden !important;}
-    
-    /* 6. 强制显示左上角的侧边栏开关 (>)，并提高层级确保不被遮挡 */
-    [data-testid="collapsedControl"] {
-        visibility: visible !important;
-        display: block !important;
-        z-index: 999999 !important;
-    }
-    
-    /* 7. 确保侧边栏本身是可见的 */
-    section[data-testid="stSidebar"] {
-        visibility: visible !important;
-    }
+    /* 注意：删除了隐藏 stToolbar 的代码，确保左上角的侧边栏开关一定会显示出来 */
 </style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
