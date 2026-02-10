@@ -12,8 +12,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"  # <--- 保持：默认展开侧边栏
 )
 
-# --- 关键修改：深度隐藏顶部工具栏 ---
-# 使用 visibility 属性：隐藏整个顶部 Header，但“点对点”强制显示左侧的侧边栏开关
+# --- 关键修改：修复侧边栏开关显示问题 ---
+# 策略调整：不再隐藏整个 Header 父容器，而是单独隐藏 Header 内部不需要的元素（如右侧工具栏）。
+# 这样可以确保左侧的侧边栏开关（>）自然显示，不会被父级样式“误杀”。
 hide_streamlit_style = """
 <style>
     /* 1. 隐藏右上角的“三道杠”菜单 */
@@ -28,16 +29,21 @@ hide_streamlit_style = """
     /* 4. 隐藏顶部的彩色装饰条 */
     [data-testid="stDecoration"] {display:none;}
     
-    /* 5. 核心修改：隐藏整个顶部 Header 区域 (包括 Share, Star, GitHub 等按钮) */
-    header[data-testid="stHeader"] {
-        visibility: hidden;
-    }
+    /* 5. 隐藏右上角的工具栏 (Share, Star, GitHub 等按钮) */
+    /* 使用 display: none !important 彻底移除右侧区域，不留空白 */
+    [data-testid="stToolbar"] {display: none !important;}
     
-    /* 6. 关键补丁：强制显示左上角的侧边栏开关 (>) */
-    /* 因为父元素 hidden 了，子元素必须显式设置为 visible 才能看见 */
+    /* 6. 确保 Header 背景透明或干净 (可选，视需要调整) */
+    header[data-testid="stHeader"] {
+        background-color: transparent;
+    }
+
+    /* 7. 核心修复：确保侧边栏开关 (>) 显式可见，并设置高层级 */
     [data-testid="collapsedControl"] {
+        display: block !important;
         visibility: visible !important;
-        z-index: 999999 !important;
+        z-index: 100000 !important;
+        color: #31333F !important; /* 强制深色图标，防止在浅色背景下看不清 */
     }
 </style>
 """
