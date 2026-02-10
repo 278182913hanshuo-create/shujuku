@@ -8,38 +8,36 @@ import time
 # --- 页面配置 ---
 st.set_page_config(
     page_title="北京富达采购成本数据库",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="collapsed"  # <--- 关键修改：默认收起侧边栏
 )
 
-# --- 关键修改：隐藏 Streamlit 默认的菜单、Footer、顶部栏和工具栏 ---
+# --- 关键修改：精细化隐藏 CSS ---
+# 我们不再粗暴地隐藏整个 Header，而是只隐藏特定的按钮
 hide_streamlit_style = """
 <style>
-    /* 隐藏顶部菜单(汉堡按钮) */
+    /* 1. 隐藏右上角的“三道杠”菜单 (Settings, Print等) */
     #MainMenu {visibility: hidden;}
     
-    /* 隐藏底部 Footer ("Made with Streamlit") */
+    /* 2. 隐藏底部的 "Made with Streamlit" */
     footer {visibility: hidden;}
     
-    /* 隐藏顶部 Header 区域 */
-    header {visibility: hidden;}
-    
-    /* 隐藏 Deploy 按钮 */
+    /* 3. 隐藏右上角的 Deploy (部署) 按钮 */
     .stDeployButton {display:none;}
     
-    /* 隐藏工具栏 (通常包含 Manage App 按钮) */
+    /* 4. 隐藏顶部的彩色装饰条 */
+    [data-testid="stDecoration"] {display:none;}
+    
+    /* 5. 隐藏右上角的 Manage App 工具栏，但不影响左上角的侧边栏开关 */
     [data-testid="stToolbar"] {visibility: hidden !important;}
     
-    /* 隐藏顶部的装饰条 */
-    [data-testid="stDecoration"] {visibility: hidden !important;}
-    
-    /* 隐藏状态小部件 */
-    [data-testid="stStatusWidget"] {visibility: hidden !important;}
+    /* 6. 确保侧边栏的开关按钮 (>) 是可见的，防止被误伤 */
+    [data-testid="collapsedControl"] {visibility: visible !important;}
 </style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # --- 常量定义 ---
-# 用于在同一张表中区分“报价”和“考核”的标记
 ASSESSMENT_TAG = "供应商考核"
 
 # --- 登录验证功能 ---
@@ -174,22 +172,17 @@ if check_login():
         if existing_records:
             df = pd.DataFrame(existing_records)
             
-            # 兼容性重命名
             if "单价" in df.columns and "询价单价" not in df.columns:
                 df.rename(columns={"单价": "询价单价"}, inplace=True)
 
-            # === 数据隔离关键逻辑 ===
-            # 如果存在设备类型列，过滤掉“供应商考核”的数据
             if "设备类型" in df.columns:
                 df = df[df["设备类型"] != ASSESSMENT_TAG]
 
-            # 想要显示的列
             target_cols = ["供应商", "联系人", "设备类型", "询价单价", "录入时间", "备注"]
             display_cols = [c for c in target_cols if c in df.columns]
             
             final_df = df.copy()
 
-            # 搜索
             search_q = st.text_input("🔍 全局搜索", placeholder="输入关键字...")
             if search_q:
                 mask = final_df.astype(str).apply(lambda x: x.str.contains(search_q, case=False)).any(axis=1)
@@ -210,7 +203,6 @@ if check_login():
                     }
                 )
 
-            # 删除功能
             with st.expander("🗑️ 删除记录"):
                 if not final_df.empty:
                     records_to_delete = final_df.to_dict('records')
@@ -272,14 +264,11 @@ if check_login():
     elif menu == "📝 供应商考核":
         st.title("📝 供应商绩效考核")
         
-        # 分为两个标签页：新建考核 和 历史记录
         tab1, tab2 = st.tabs(["➕ 新建考核", "📜 历史考核记录"])
         
-        # === 标签页 1: 新建考核 ===
         with tab1:
             st.info("考核结果将自动保存至数据库，请客观评分。")
             
-            # 准备供应商列表 (包含考核和非考核的所有供应商，方便选择)
             supplier_list = []
             if existing_records:
                 df_temp = pd.DataFrame(existing_records)
@@ -323,7 +312,6 @@ if check_login():
                         if "询价单价" not in df_columns and "单价" in df_columns:
                             price_key = "单价"
                         
-                        # 标记为考核数据
                         payload = {
                             "供应商": target_supplier,
                             "设备类型": ASSESSMENT_TAG, 
@@ -338,19 +326,16 @@ if check_login():
                             time.sleep(1)
                             st.rerun()
 
-        # === 标签页 2: 历史考核记录 ===
         with tab2:
             if existing_records:
                 df_assess = pd.DataFrame(existing_records)
                 
-                # 只保留考核数据
                 if "设备类型" in df_assess.columns:
                     df_assess = df_assess[df_assess["设备类型"] == ASSESSMENT_TAG]
                 
                 if df_assess.empty:
                     st.info("暂无历史考核记录")
                 else:
-                    # 显示特定列
                     assess_cols = ["供应商", "录入时间", "备注"]
                     final_assess = df_assess[assess_cols].copy() if set(assess_cols).issubset(df_assess.columns) else df_assess
                     
@@ -364,7 +349,6 @@ if check_login():
                         }
                     )
                     
-                    # 考核记录删除功能
                     with st.expander("🗑️ 删除考核记录"):
                         records_del = df_assess.to_dict('records')
                         def assess_fmt(row):
