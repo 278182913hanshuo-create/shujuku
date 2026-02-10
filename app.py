@@ -12,55 +12,54 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- 关键修改：自定义侧边栏开关位置 ---
-# 既然默认位置容易出问题，我们直接用 CSS 把它“搬”出来。
-# 这里把它设置成一个固定在左上角的“悬浮按钮”。
+# --- 关键修改：父隐子显策略 ---
+# 放弃强制移动位置，改用“隐藏 Header 所有子元素，但单独显示开关”的策略。
+# 这样开关会保留在原生位置，兼容性最好。
 hide_streamlit_style = """
 <style>
     /* 1. 隐藏顶部装饰条 */
-    [data-testid="stDecoration"] {display: none;}
+    [data-testid="stDecoration"] {
+        display: none;
+    }
     
     /* 2. 隐藏底部 Footer */
-    footer {display: none !important;}
+    footer {
+        display: none !important;
+    }
     
     /* 3. 隐藏 Deploy 按钮 */
-    .stDeployButton {display: none;}
-
-    /* 4. 隐藏右上角的工具栏 (Share, Star, Menu) */
-    [data-testid="stToolbar"] {display: none !important;}
-
-    /* 5. 【核心】重新定位侧边栏开关 (>) */
-    [data-testid="stSidebarCollapsedControl"], [data-testid="collapsedControl"] {
-        display: block !important;
-        visibility: visible !important;
-        
-        /* 强制固定定位 */
-        position: fixed !important;
-        top: 20px !important;    /* 距离顶部 20px */
-        left: 20px !important;   /* 距离左侧 20px */
-        
-        /* 样式美化：加个背景色让它显眼点 */
-        background-color: #f0f2f6 !important; 
-        border: 1px solid #d6d6d6;
-        border-radius: 8px;      /* 圆角 */
-        padding: 5px !important; /* 内边距 */
-        width: 40px !important;
-        height: 40px !important;
-        
-        /* 层级最高，防止被遮挡 */
-        z-index: 1000001 !important;
-        
-        /* 确保文字/图标颜色可见 */
-        color: #31333F !important;
-        text-align: center;
-        line-height: 1 !important;
+    .stDeployButton {
+        display: none;
     }
+
+    /* 4. 【核心策略】处理顶部 Header */
     
-    /* 鼠标悬停时的效果 */
-    [data-testid="stSidebarCollapsedControl"]:hover, [data-testid="collapsedControl"]:hover {
-        background-color: #e0e2e6 !important;
-        border-color: #999;
+    /* 第一步：让 Header 容器本身透明且不拦截点击 */
+    header[data-testid="stHeader"] {
+        background: transparent !important;
+        pointer-events: none !important; /* 让鼠标点击穿透 Header 空白处 */
     }
+
+    /* 第二步：隐藏 Header 内部的【所有】子元素 (包括右侧工具栏、菜单等) */
+    header[data-testid="stHeader"] > * {
+        visibility: hidden !important;
+    }
+
+    /* 第三步：【唯独】把侧边栏开关显示出来 */
+    /* 使用 visibility: visible 覆盖父级的 hidden */
+    header[data-testid="stHeader"] [data-testid="stSidebarCollapsedControl"],
+    header[data-testid="stHeader"] [data-testid="collapsedControl"] {
+        visibility: visible !important;
+        display: block !important;
+        pointer-events: auto !important; /* 恢复开关的点击功能 */
+        
+        /* 确保颜色是深色，防止背景白字看不清 */
+        color: #31333F !important; 
+        
+        /* 提高层级，防止被隐藏的透明元素覆盖 */
+        z-index: 999999 !important;
+    }
+
 </style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
