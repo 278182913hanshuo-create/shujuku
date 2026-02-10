@@ -11,13 +11,29 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- 关键修改：隐藏 Streamlit 默认的菜单、Footer 和 顶部栏 ---
+# --- 关键修改：隐藏 Streamlit 默认的菜单、Footer、顶部栏和工具栏 ---
 hide_streamlit_style = """
 <style>
+    /* 隐藏顶部菜单(汉堡按钮) */
     #MainMenu {visibility: hidden;}
+    
+    /* 隐藏底部 Footer ("Made with Streamlit") */
     footer {visibility: hidden;}
+    
+    /* 隐藏顶部 Header 区域 */
     header {visibility: hidden;}
+    
+    /* 隐藏 Deploy 按钮 */
     .stDeployButton {display:none;}
+    
+    /* 隐藏工具栏 (通常包含 Manage App 按钮) */
+    [data-testid="stToolbar"] {visibility: hidden !important;}
+    
+    /* 隐藏顶部的装饰条 */
+    [data-testid="stDecoration"] {visibility: hidden !important;}
+    
+    /* 隐藏状态小部件 */
+    [data-testid="stStatusWidget"] {visibility: hidden !important;}
 </style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
