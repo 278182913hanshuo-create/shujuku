@@ -12,12 +12,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"  # <--- 保持：默认展开侧边栏
 )
 
-# --- 关键修改：CSS 样式大瘦身 ---
-# 之前的写法太激进，导致把侧边栏容器也隐藏了。
-# 现在我们只隐藏特定的元素，不再隐藏整个工具栏容器。
+# --- 关键修改：深度隐藏顶部工具栏 ---
+# 使用 visibility 属性：隐藏整个顶部 Header，但“点对点”强制显示左侧的侧边栏开关
 hide_streamlit_style = """
 <style>
-    /* 1. 隐藏右上角的“三道杠”菜单 (Settings, Print等) */
+    /* 1. 隐藏右上角的“三道杠”菜单 */
     #MainMenu {visibility: hidden;}
     
     /* 2. 隐藏底部的 "Made with Streamlit" */
@@ -29,7 +28,17 @@ hide_streamlit_style = """
     /* 4. 隐藏顶部的彩色装饰条 */
     [data-testid="stDecoration"] {display:none;}
     
-    /* 注意：删除了隐藏 stToolbar 的代码，确保左上角的侧边栏开关一定会显示出来 */
+    /* 5. 核心修改：隐藏整个顶部 Header 区域 (包括 Share, Star, GitHub 等按钮) */
+    header[data-testid="stHeader"] {
+        visibility: hidden;
+    }
+    
+    /* 6. 关键补丁：强制显示左上角的侧边栏开关 (>) */
+    /* 因为父元素 hidden 了，子元素必须显式设置为 visible 才能看见 */
+    [data-testid="collapsedControl"] {
+        visibility: visible !important;
+        z-index: 999999 !important;
+    }
 </style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
