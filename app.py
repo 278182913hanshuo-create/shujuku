@@ -9,32 +9,57 @@ import time
 st.set_page_config(
     page_title="北京富达采购成本数据库",
     layout="wide",
-    initial_sidebar_state="expanded"  # <--- 保持：默认展开侧边栏
+    initial_sidebar_state="expanded"
 )
 
-# --- 关键修改：精准隐藏右上角工具栏 ---
-# 我们只隐藏 data-testid="stToolbar"，这正是您截图中显示的包含 Share/Star/Menu 的区域。
-# Header 容器本身保持显示，确保左上角的侧边栏开关 (>) 不受影响。
+# --- 关键修改：自定义侧边栏开关位置 ---
+# 既然默认位置容易出问题，我们直接用 CSS 把它“搬”出来。
+# 这里把它设置成一个固定在左上角的“悬浮按钮”。
 hide_streamlit_style = """
 <style>
-    /* 1. 隐藏顶部的彩色装饰条 */
-    [data-testid="stDecoration"] {
-        display: none;
-    }
+    /* 1. 隐藏顶部装饰条 */
+    [data-testid="stDecoration"] {display: none;}
     
-    /* 2. 隐藏底部的 "Made with Streamlit" Footer */
-    footer {
-        display: none !important;
-    }
+    /* 2. 隐藏底部 Footer */
+    footer {display: none !important;}
     
     /* 3. 隐藏 Deploy 按钮 */
-    .stDeployButton {
-        display: none;
-    }
+    .stDeployButton {display: none;}
 
-    /* 4. 核心修改：隐藏右上角的工具栏 (Share, Star, GitHub, 三个点) */
-    [data-testid="stToolbar"] {
-        display: none !important;
+    /* 4. 隐藏右上角的工具栏 (Share, Star, Menu) */
+    [data-testid="stToolbar"] {display: none !important;}
+
+    /* 5. 【核心】重新定位侧边栏开关 (>) */
+    [data-testid="stSidebarCollapsedControl"], [data-testid="collapsedControl"] {
+        display: block !important;
+        visibility: visible !important;
+        
+        /* 强制固定定位 */
+        position: fixed !important;
+        top: 20px !important;    /* 距离顶部 20px */
+        left: 20px !important;   /* 距离左侧 20px */
+        
+        /* 样式美化：加个背景色让它显眼点 */
+        background-color: #f0f2f6 !important; 
+        border: 1px solid #d6d6d6;
+        border-radius: 8px;      /* 圆角 */
+        padding: 5px !important; /* 内边距 */
+        width: 40px !important;
+        height: 40px !important;
+        
+        /* 层级最高，防止被遮挡 */
+        z-index: 1000001 !important;
+        
+        /* 确保文字/图标颜色可见 */
+        color: #31333F !important;
+        text-align: center;
+        line-height: 1 !important;
+    }
+    
+    /* 鼠标悬停时的效果 */
+    [data-testid="stSidebarCollapsedControl"]:hover, [data-testid="collapsedControl"]:hover {
+        background-color: #e0e2e6 !important;
+        border-color: #999;
     }
 </style>
 """
