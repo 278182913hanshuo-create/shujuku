@@ -12,9 +12,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"  # <--- 保持：默认展开侧边栏
 )
 
-# --- 关键修改：最稳妥的 CSS 方案 ---
-# 1. 不再隐藏 header 父容器，确保左侧开关有“家”可归。
-# 2. 精准隐藏右侧工具栏和顶部彩条。
+# --- 关键修改：CSS 点击穿透方案 ---
 hide_streamlit_style = """
 <style>
     /* 1. 隐藏顶部的彩色装饰条 */
@@ -32,17 +30,32 @@ hide_streamlit_style = """
         display: none !important;
     }
 
-    /* 4. 确保 Header 背景透明，看起来像没有 Header 一样，但保留其占位 */
+    /* 4. 关键：将 Header 设为透明且“点击穿透” */
+    /* pointer-events: none 表示鼠标点击这个区域时，事件会穿透过去，不会被透明层挡住 */
     header[data-testid="stHeader"] {
         background: transparent;
         border-bottom: none;
+        pointer-events: none; 
     }
     
-    /* 5. 显式确保侧边栏开关可见 (兼容不同 Streamlit 版本的 ID) */
-    [data-testid="stSidebarCollapsedControl"], [data-testid="collapsedControl"] {
+    /* 5. 核心修复：单独恢复侧边栏开关的点击功能 */
+    /* pointer-events: auto 表示这个按钮可以接收点击 */
+    [data-testid="stSidebarCollapsedControl"] {
         display: block !important;
         visibility: visible !important;
-        color: #333 !important; /* 强制深色，防止背景白字看不清 */
+        pointer-events: auto !important; 
+        color: #1f1f1f !important; /* 深黑色图标 */
+        background-color: rgba(255, 255, 255, 0.8); /* 半透明白色背景，防止被下方内容干扰 */
+        border-radius: 4px;
+        padding: 4px;
+        z-index: 1000000 !important;
+    }
+    
+    /* 兼容旧版本 Streamlit 的 ID */
+    [data-testid="collapsedControl"] {
+        display: block !important;
+        visibility: visible !important;
+        pointer-events: auto !important;
         z-index: 1000000 !important;
     }
 </style>
