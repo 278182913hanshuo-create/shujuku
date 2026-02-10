@@ -7,8 +7,7 @@ import time
 
 # --- 页面配置 ---
 st.set_page_config(
-    page_title="供应商设备价格数据库 (飞书版)",
-    page_icon="🐼",
+    page_title="北京富达采购成本数据库",
     layout="wide"
 )
 
@@ -113,7 +112,6 @@ class FeishuConnector:
             if res_json.get("code") == 0:
                 return True
             else:
-                # 依然保留错误提示，但去掉了复杂的警告
                 st.error(f"❌ 提交失败，飞书拒绝了请求。")
                 return False
         except Exception:
@@ -134,17 +132,15 @@ class FeishuConnector:
 if check_login():
     connector = FeishuConnector()
 
-    st.sidebar.title("🐼 飞书云数据库")
+    st.sidebar.title("北京富达采购数据库")
     
-    # [修改] 移除了调试模式 (列名检查) 的代码块
-
     if st.sidebar.button("🚪 退出登录"):
         st.session_state.authenticated = False
         st.rerun()
         
-    menu = st.sidebar.radio("功能菜单", ["📊 数据查询", "➕ 录入报价", "📈 价格分析"])
+    menu = st.sidebar.radio("功能菜单", ["📊 数据查询", "➕ 录入报价", "📝 供应商考核"])
 
-    # 获取现有数据 (静默获取，不显示 spinner)
+    # 获取现有数据
     existing_records = connector.get_records()
     df_columns = []
     if existing_records:
@@ -153,7 +149,7 @@ if check_login():
 
     # --- 功能 1: 数据查询 ---
     if menu == "📊 数据查询":
-        st.title("📊 供应商采购成本数据库")
+        st.title("📊 采购成本查询")
         
         if existing_records:
             df = pd.DataFrame(existing_records)
@@ -176,9 +172,7 @@ if check_login():
 
             st.write(f"共找到 {len(final_df)} 条记录")
             
-            # [修改] 移除了 "未找到指定列" 的警告，直接显示数据
             if not display_cols:
-                # 如果找不到目标列，就显示所有列，不报错
                 st.dataframe(final_df, use_container_width=True)
             else:
                 st.dataframe(
@@ -212,8 +206,6 @@ if check_login():
     # --- 功能 2: 录入报价 ---
     elif menu == "➕ 录入报价":
         st.title("➕ 录入新报价")
-        
-        # [修改] 移除了此处关于 "缺少列" 的所有警告代码
         
         with st.form("new_entry"):
             c1, c2 = st.columns(2)
@@ -252,23 +244,73 @@ if check_login():
                         time.sleep(1)
                         st.rerun()
 
-    # --- 功能 3: 价格分析 ---
-    elif menu == "📈 价格分析":
-        st.title("📈 简易分析")
+    # --- 功能 3: 供应商考核 ---
+    elif menu == "📝 供应商考核":
+        st.title("📝 供应商绩效考核")
+        st.info("考核结果将自动保存至数据库，请客观评分。")
+        
+        # 准备供应商列表
+        supplier_list = []
         if existing_records:
-            df = pd.DataFrame(existing_records)
-            if "单价" in df.columns and "询价单价" not in df.columns:
-                df.rename(columns={"单价": "询价单价"}, inplace=True)
+            df_temp = pd.DataFrame(existing_records)
+            if "供应商" in df_temp.columns:
+                supplier_list = df_temp["供应商"].dropna().unique().tolist()
 
-            if not df.empty and "询价单价" in df.columns:
-                tab1, tab2 = st.tabs(["按供应商", "按设备类型"])
-                with tab1:
-                    if "供应商" in df.columns:
-                        st.bar_chart(df.groupby("供应商")["询价单价"].mean())
-                with tab2:
-                    if "设备类型" in df.columns:
-                        st.bar_chart(df.groupby("设备类型")["询价单价"].mean())
+        with st.form("assessment_form"):
+            # 如果有历史数据，提供下拉框，否则手填
+            if supplier_list:
+                target_supplier = st.selectbox("选择被考核供应商", supplier_list)
             else:
-                st.info("数据不足以生成图表")
-        else:
-            st.info("暂无数据")
+                target_supplier = st.text_input("被考核供应商名称")
+            
+            st.divider()
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                score_quality = st.slider("产品质量评分 (40%)", 0, 100, 80)
+                score_delivery = st.slider("交付及时性评分 (30%)", 0, 100, 80)
+            
+            with col2:
+                score_price = st.slider("价格竞争力评分 (20%)", 0, 100, 80)
+                score_service = st.slider("售后服务评分 (10%)", 0, 100, 80)
+            
+            comments = st.text_area("考核评语/改进建议")
+            
+            submitted = st.form_submit_button("📤 提交考核结果")
+            
+            if submitted:
+                if not target_supplier:
+                    st.warning("请选择或填写供应商名称")
+                else:
+                    # 计算加权总分 (简单平均或加权)
+                    # 这里做简单平均展示，备注里记录详情
+                    avg_score = (score_quality + score_delivery + score_price + score_service) / 4
+                    
+                    # 构造写入备注的详细内容
+                    detail_note = (
+                        f"【年度考核】总分: {avg_score:.1f}\n"
+                        f"质量: {score_quality} | 交付: {score_delivery} | 价格: {score_price} | 服务: {score_service}\n"
+                        f"评语: {comments}"
+                    )
+
+                    # 智能匹配价格字段名
+                    price_key = "询价单价"
+                    if "询价单价" not in df_columns and "单价" in df_columns:
+                        price_key = "单价"
+                    
+                    # 构造Payload
+                    # 为了利用现有表格结构，将“设备类型”标记为“供应商考核”
+                    # 价格设为0避免影响成本统计
+                    payload = {
+                        "供应商": target_supplier,
+                        "设备类型": "供应商考核", 
+                        "联系人": "考核系统",
+                        price_key: 0,
+                        "备注": detail_note,
+                        "录入时间": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }
+                    
+                    if connector.add_record(payload):
+                        st.success(f"✅ 考核完成：{target_supplier} (总分 {avg_score:.1f})")
+                        time.sleep(1)
+                        st.rerun()
