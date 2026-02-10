@@ -12,13 +12,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"  # <--- 保持：默认展开侧边栏
 )
 
-# --- 关键修改：恢复顶部栏显示 ---
-# 移除了之前隐藏 Header 和 Toolbar 的代码，现在：
-# 1. 左上角的侧边栏开关 (>) 会正常显示和点击。
-# 2. 右上角的功能菜单 (三个点) 会正常显示。
+# --- 关键修改：精准隐藏右上角工具栏 ---
+# 我们只隐藏 data-testid="stToolbar"，这正是您截图中显示的包含 Share/Star/Menu 的区域。
+# Header 容器本身保持显示，确保左上角的侧边栏开关 (>) 不受影响。
 hide_streamlit_style = """
 <style>
-    /* 1. 隐藏顶部的彩色装饰条 (可选) */
+    /* 1. 隐藏顶部的彩色装饰条 */
     [data-testid="stDecoration"] {
         display: none;
     }
@@ -28,9 +27,14 @@ hide_streamlit_style = """
         display: none !important;
     }
     
-    /* 3. 隐藏 Deploy 按钮 (如果不需要部署按钮可保留此行，否则可删除) */
+    /* 3. 隐藏 Deploy 按钮 */
     .stDeployButton {
         display: none;
+    }
+
+    /* 4. 核心修改：隐藏右上角的工具栏 (Share, Star, GitHub, 三个点) */
+    [data-testid="stToolbar"] {
+        display: none !important;
     }
 </style>
 """
