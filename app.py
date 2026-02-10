@@ -30,6 +30,7 @@ def check_login():
             submitted = st.form_submit_button("登录")
 
             if submitted:
+                # 默认密码 admin / 123456
                 valid_users = st.secrets.get("credentials", {"admin": "123456"})
                 if username in valid_users and valid_users[username] == password:
                     st.session_state.authenticated = True
@@ -68,6 +69,7 @@ class FeishuConnector:
         if not token: return []
         
         headers = {"Authorization": f"Bearer {token}"}
+        # page_size 可根据需要调整，最大 500
         params = {"page_size": 100} 
         
         try:
@@ -115,7 +117,7 @@ if check_login():
     
     # --- 调试工具 ---
     with st.sidebar.expander("🔧 调试模式 (列名检查)"):
-        st.write("如果你发现数据没显示，可能是飞书里的列名和代码不一致。")
+        st.write("如果数据没显示，请检查飞书列名是否与代码一致。")
         show_debug = st.checkbox("显示原始列名")
 
     if st.sidebar.button("🚪 退出登录"):
@@ -134,117 +136,106 @@ if check_login():
         if data:
             df = pd.DataFrame(data)
             
+            # --- 兼容性处理：如果旧数据叫"单价"，新数据叫"询价单价"，统一改名方便查看 ---
+            if "单价" in df.columns and "询价单价" not in df.columns:
+                df.rename(columns={"单价": "询价单价"}, inplace=True)
+
             # --- 调试显示 ---
             if show_debug:
                 st.info(f"飞书返回的实际列名: {list(df.columns)}")
-                st.write("请确保飞书里的列名与下方录入代码中的字段一致。")
+                st.write("请确保飞书里的列名包含：供应商、联系人、设备类型、询价单价、录入时间、备注")
 
-            # 检查关键列是否存在
-            has_dept = "所属部门" in df.columns
+            # 定义想要显示的列顺序
+            target_cols = ["供应商", "联系人", "设备类型", "询价单价", "录入时间", "备注"]
             
-            if not has_dept:
-                st.warning("⚠️ 未检测到【所属部门】列。暂时显示全部数据，请去飞书添加该列以启用分类功能。")
-                # 如果没有部门列，直接显示整个表格
-                st.dataframe(df.drop(columns=["_record_id"], errors="ignore"), use_container_width=True)
-                
-            else:
-                # 如果有部门列，使用 Tabs 分类
-                depts = list(df["所属部门"].dropna().unique())
-                if not depts:
-                    depts = ["暂无部门数据"]
-                
-                tabs = st.tabs(depts)
-                
-                for i, dept_name in enumerate(depts):
-                    with tabs[i]:
-                        # 筛选数据
-                        dept_df = df[df["所属部门"] == dept_name]
-                        
-                        # 搜索功能
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            search_q = st.text_input(f"🔍 搜索 ({dept_name})", key=f"s_{i}")
-                        
-                        if search_q:
-                            # 模糊搜索所有列
-                            mask = dept_df.astype(str).apply(lambda x: x.str.contains(search_q, case=False)).any(axis=1)
-                            dept_df = dept_df[mask]
+            # 过滤出实际存在的列，防止报错
+            display_cols = [c for c in target_cols if c in df.columns]
+            
+            # 始终保留 _record_id 用于删除操作，但不显示
+            final_df = df.copy()
 
-                        # 显示表格 (自动显示所有列，不再硬编码过滤)
-                        st.dataframe(
-                            dept_df.drop(columns=["_record_id"], errors="ignore"), 
-                            use_container_width=True,
-                            hide_index=True
-                        )
+            # --- 搜索框 ---
+            search_q = st.text_input("🔍 全局搜索 (供应商/联系人/设备)", placeholder="输入关键字...")
+            if search_q:
+                mask = final_df.astype(str).apply(lambda x: x.str.contains(search_q, case=False)).any(axis=1)
+                final_df = final_df[mask]
 
-                        # 删除功能
-                        with st.expander(f"🗑️ 删除 {dept_name} 的记录"):
-                            if not dept_df.empty:
-                                options = dept_df.to_dict('records')
-                                # 尝试智能生成显示名称
-                                def fmt(opt):
-                                    # 尝试找一些常见的名字作为标签
-                                    name = opt.get("设备类型") or opt.get("设备名称") or opt.get("项目地点") or "未知项"
-                                    price = opt.get("单价") or opt.get("中标合同额") or "0"
-                                    return f"{name} (￥{price})"
-                                
-                                sel = st.selectbox("选择记录", options, format_func=fmt, key=f"d_{i}")
-                                if st.button("确认删除", key=f"btn_{i}"):
-                                    if connector.delete_record(sel["_record_id"]):
-                                        st.success("删除成功")
-                                        time.sleep(1)
-                                        st.rerun()
+            # --- 显示数据表格 ---
+            st.write(f"共找到 {len(final_df)} 条记录")
+            st.dataframe(
+                final_df[display_cols], # 只显示指定的列
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "询价单价": st.column_config.NumberColumn(format="¥ %.2f"),
+                    "录入时间": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm"),
+                }
+            )
+
+            # --- 删除功能 ---
+            with st.expander("🗑️ 删除记录"):
+                if not final_df.empty:
+                    # 制作一个下拉菜单的选项列表
+                    records_to_delete = final_df.to_dict('records')
+                    
+                    def fmt_func(row):
+                        # 下拉框里显示的文字格式
+                        sup = row.get("供应商", "未知供应商")
+                        dev = row.get("设备类型", "未知设备")
+                        price = row.get("询价单价", 0)
+                        return f"{sup} - {dev} (¥{price})"
+
+                    selected_row = st.selectbox("选择要删除的行", records_to_delete, format_func=fmt_func)
+                    
+                    if st.button("确认删除"):
+                        if connector.delete_record(selected_row["_record_id"]):
+                            st.success("删除成功！")
+                            time.sleep(1)
+                            st.rerun()
+
         else:
-            st.info("表格为空，或连接失败。")
+            st.info("表格为空，或连接失败。请先去【录入报价】页面添加数据。")
 
     # --- 功能 2: 录入报价 ---
     elif menu == "➕ 录入报价":
         st.title("➕ 录入新报价")
-        st.caption("注意：此处修改仅影响新录入的数据，不会自动修改旧数据的列名。")
+        st.caption("请确保飞书表格中已包含以下列名，否则可能写入失败。")
         
         with st.form("new_entry"):
             c1, c2 = st.columns(2)
             with c1:
-                # 这里的 label 就是写入飞书的 key
-                # 如果飞书里叫 "设备名称"，这里就得改叫 "设备名称"
-                dept = st.text_input("所属部门", placeholder="例如：电力物联网中心")
-                project = st.text_input("项目地点")
-                device = st.text_input("设备类型") 
+                supplier = st.text_input("供应商", placeholder="xx科技有限公司")
+                contact = st.text_input("联系人", placeholder="王经理 138...")
+                device = st.text_input("设备类型", placeholder="例如：离心泵")
             with c2:
-                supplier = st.text_input("供应商")
-                price = st.number_input("单价", min_value=0.0)
-                count = st.number_input("设备数量", min_value=0, step=1)
+                price = st.number_input("询价单价 (¥)", min_value=0.0, step=100.0)
+                # 可选：如果你还需要其他字段，可以在这里加，但在“查询”页我默认隐藏了它们
+                note = st.text_area("备注", placeholder="含税/交货期/参数等")
             
-            # 更多可选字段
-            with st.expander("更多详细信息"):
-                contract_amt = st.number_input("中标合同额", min_value=0.0)
-                date = st.text_input("供货日期")
-                contact = st.text_input("联系人")
-                note = st.text_area("备注")
-
             submitted = st.form_submit_button("🚀 提交")
 
             if submitted:
-                # 构建数据字典
-                payload = {
-                    "所属部门": dept,
-                    "项目地点": project,
-                    "设备类型": device,
-                    "供应商": supplier,
-                    "单价": price,
-                    "设备数量": count,
-                    "中标合同额": contract_amt,
-                    "供货日期": date,
-                    "联系人": contact,
-                    "备注": note,
-                    "录入时间": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                }
-                
-                # 清除空值，防止写入错误
-                clean_payload = {k: v for k, v in payload.items() if v}
-                
-                if connector.add_record(clean_payload):
-                    st.success("✅ 写入成功！如果表格里没显示，请检查飞书列名是否与上方输入框标题一致。")
+                if not supplier:
+                    st.warning("请填写供应商名称")
+                else:
+                    # 构建数据字典 (Key 必须与飞书列名完全一致)
+                    payload = {
+                        "供应商": supplier,
+                        "联系人": contact,
+                        "设备类型": device,
+                        "询价单价": price,  # 注意：这里改成了“询价单价”
+                        "备注": note,
+                        "录入时间": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }
+                    
+                    # 清除空值
+                    clean_payload = {k: v for k, v in payload.items() if v}
+                    
+                    if connector.add_record(clean_payload):
+                        st.success(f"✅ 已录入：{supplier} - {device}")
+                        time.sleep(1)
+                        # 自动刷新页面重置表单
+                        st.rerun()
 
     # --- 功能 3: 价格分析 ---
     elif menu == "📈 价格分析":
@@ -252,17 +243,25 @@ if check_login():
         data = connector.get_records()
         if data:
             df = pd.DataFrame(data)
-            if not df.empty:
-                # 尝试智能识别数值列
-                num_cols = df.select_dtypes(include=['float', 'int']).columns.tolist()
-                # 尝试识别文本列
-                text_cols = df.select_dtypes(include=['object']).columns.tolist()
+            # 兼容改名
+            if "单价" in df.columns and "询价单价" not in df.columns:
+                df.rename(columns={"单价": "询价单价"}, inplace=True)
+
+            if not df.empty and "询价单价" in df.columns:
+                tab1, tab2 = st.tabs(["按供应商", "按设备类型"])
                 
-                if num_cols and text_cols:
-                    x_axis = st.selectbox("选择X轴 (分类)", text_cols, index=0)
-                    y_axis = st.selectbox("选择Y轴 (数值)", num_cols, index=0)
-                    st.bar_chart(df, x=x_axis, y=y_axis)
-                else:
-                    st.write("数据格式不足以生成图表 (需要至少一列数字和一列文本)")
+                with tab1:
+                    if "供应商" in df.columns:
+                        avg_price = df.groupby("供应商")["询价单价"].mean()
+                        st.bar_chart(avg_price)
+                        st.caption("各供应商平均报价")
+                
+                with tab2:
+                    if "设备类型" in df.columns:
+                        dev_price = df.groupby("设备类型")["询价单价"].mean()
+                        st.bar_chart(dev_price)
+                        st.caption("各设备类型平均报价")
             else:
-                st.info("暂无数据")
+                st.info("暂无足够数据生成图表 (需要包含'询价单价'列)")
+        else:
+            st.info("暂无数据")
