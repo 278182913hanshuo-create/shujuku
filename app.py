@@ -24,7 +24,7 @@ def check_login():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.title("🔐 系统登录")
-        st.info("默认账号: admin / 默认密码: 123456 (可配置)")
+        st.info("")
         
         with st.form("login_form"):
             username = st.text_input("账号")
@@ -155,7 +155,7 @@ if check_login():
 
     # --- 功能 1: 数据查询 ---
     if menu == "📊 数据查询":
-        st.title("📊 供应商设备报价表")
+        st.title("📊 供应商采购成本数据库")
         
         with st.spinner("正在连接飞书服务器..."):
             data = connector.get_records()
@@ -312,3 +312,4 @@ if check_login():
                     st.info("数据字段不足，无法生成图表。")
             else:
                 st.info("所选部门暂无数据。")
+
