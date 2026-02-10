@@ -12,38 +12,38 @@ st.set_page_config(
     initial_sidebar_state="expanded"  # <--- 保持：默认展开侧边栏
 )
 
-# --- 关键修改：修复侧边栏开关显示问题 ---
-# 策略调整：不再隐藏整个 Header 父容器，而是单独隐藏 Header 内部不需要的元素（如右侧工具栏）。
-# 这样可以确保左侧的侧边栏开关（>）自然显示，不会被父级样式“误杀”。
+# --- 关键修改：最稳妥的 CSS 方案 ---
+# 1. 不再隐藏 header 父容器，确保左侧开关有“家”可归。
+# 2. 精准隐藏右侧工具栏和顶部彩条。
 hide_streamlit_style = """
 <style>
-    /* 1. 隐藏右上角的“三道杠”菜单 */
-    #MainMenu {visibility: hidden;}
+    /* 1. 隐藏顶部的彩色装饰条 */
+    [data-testid="stDecoration"] {
+        display: none;
+    }
     
-    /* 2. 隐藏底部的 "Made with Streamlit" */
-    footer {visibility: hidden;}
+    /* 2. 隐藏右上角的工具栏 (Deploy, 三个点菜单, GitHub等) */
+    [data-testid="stToolbar"] {
+        display: none !important;
+    }
     
-    /* 3. 隐藏右上角的 Deploy (部署) 按钮 */
-    .stDeployButton {display:none;}
-    
-    /* 4. 隐藏顶部的彩色装饰条 */
-    [data-testid="stDecoration"] {display:none;}
-    
-    /* 5. 隐藏右上角的工具栏 (Share, Star, GitHub 等按钮) */
-    /* 使用 display: none !important 彻底移除右侧区域，不留空白 */
-    [data-testid="stToolbar"] {display: none !important;}
-    
-    /* 6. 确保 Header 背景透明或干净 (可选，视需要调整) */
-    header[data-testid="stHeader"] {
-        background-color: transparent;
+    /* 3. 隐藏底部的 Footer */
+    footer {
+        display: none !important;
     }
 
-    /* 7. 核心修复：确保侧边栏开关 (>) 显式可见，并设置高层级 */
-    [data-testid="collapsedControl"] {
+    /* 4. 确保 Header 背景透明，看起来像没有 Header 一样，但保留其占位 */
+    header[data-testid="stHeader"] {
+        background: transparent;
+        border-bottom: none;
+    }
+    
+    /* 5. 显式确保侧边栏开关可见 (兼容不同 Streamlit 版本的 ID) */
+    [data-testid="stSidebarCollapsedControl"], [data-testid="collapsedControl"] {
         display: block !important;
         visibility: visible !important;
-        z-index: 100000 !important;
-        color: #31333F !important; /* 强制深色图标，防止在浅色背景下看不清 */
+        color: #333 !important; /* 强制深色，防止背景白字看不清 */
+        z-index: 1000000 !important;
     }
 </style>
 """
