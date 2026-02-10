@@ -12,6 +12,17 @@ st.set_page_config(
     layout="wide"
 )
 
+# --- 关键修改：隐藏 Streamlit 默认的菜单、Footer 和 顶部栏 ---
+hide_streamlit_style = """
+<style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    .stDeployButton {display:none;}
+</style>
+"""
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
 # --- 登录验证功能 ---
 def check_login():
     """简单的登录验证"""
@@ -69,7 +80,6 @@ class FeishuConnector:
         if not token: return []
         
         headers = {"Authorization": f"Bearer {token}"}
-        # page_size 可根据需要调整，最大 500
         params = {"page_size": 100} 
         
         try:
@@ -84,20 +94,31 @@ class FeishuConnector:
                     clean_data.append(row)
                 return clean_data
             else:
-                st.error(f"读取数据失败: {res_json.get('msg')}")
                 return []
         except Exception as e:
-            st.error(f"请求错误: {e}")
             return []
 
     def add_record(self, data_dict):
+        """新增记录"""
         token = self.get_token()
         if not token: return False
         
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json; charset=utf-8"}
         payload = {"fields": data_dict}
-        response = requests.post(self.base_url, headers=headers, json=payload)
-        return response.json().get("code") == 0
+        
+        try:
+            response = requests.post(self.base_url, headers=headers, json=payload)
+            res_json = response.json()
+            
+            if res_json.get("code") == 0:
+                return True
+            else:
+                # 依然保留错误提示，但去掉了复杂的警告
+                st.error(f"❌ 提交失败，飞书拒绝了请求。")
+                return False
+        except Exception:
+            st.error("网络请求出错")
+            return False
 
     def delete_record(self, record_id):
         token = self.get_token()
@@ -115,10 +136,7 @@ if check_login():
 
     st.sidebar.title("🐼 飞书云数据库")
     
-    # --- 调试工具 ---
-    with st.sidebar.expander("🔧 调试模式 (列名检查)"):
-        st.write("如果数据没显示，请检查飞书列名是否与代码一致。")
-        show_debug = st.checkbox("显示原始列名")
+    # [修改] 移除了调试模式 (列名检查) 的代码块
 
     if st.sidebar.button("🚪 退出登录"):
         st.session_state.authenticated = False
@@ -126,80 +144,76 @@ if check_login():
         
     menu = st.sidebar.radio("功能菜单", ["📊 数据查询", "➕ 录入报价", "📈 价格分析"])
 
+    # 获取现有数据 (静默获取，不显示 spinner)
+    existing_records = connector.get_records()
+    df_columns = []
+    if existing_records:
+        df_columns = list(pd.DataFrame(existing_records).columns)
+        if "_record_id" in df_columns: df_columns.remove("_record_id")
+
     # --- 功能 1: 数据查询 ---
     if menu == "📊 数据查询":
         st.title("📊 供应商采购成本数据库")
         
-        with st.spinner("正在连接飞书服务器..."):
-            data = connector.get_records()
-        
-        if data:
-            df = pd.DataFrame(data)
+        if existing_records:
+            df = pd.DataFrame(existing_records)
             
-            # --- 兼容性处理：如果旧数据叫"单价"，新数据叫"询价单价"，统一改名方便查看 ---
+            # 兼容性重命名
             if "单价" in df.columns and "询价单价" not in df.columns:
                 df.rename(columns={"单价": "询价单价"}, inplace=True)
 
-            # --- 调试显示 ---
-            if show_debug:
-                st.info(f"飞书返回的实际列名: {list(df.columns)}")
-                st.write("请确保飞书里的列名包含：供应商、联系人、设备类型、询价单价、录入时间、备注")
-
-            # 定义想要显示的列顺序
+            # 想要显示的列
             target_cols = ["供应商", "联系人", "设备类型", "询价单价", "录入时间", "备注"]
-            
-            # 过滤出实际存在的列，防止报错
             display_cols = [c for c in target_cols if c in df.columns]
             
-            # 始终保留 _record_id 用于删除操作，但不显示
             final_df = df.copy()
 
-            # --- 搜索框 ---
-            search_q = st.text_input("🔍 全局搜索 (供应商/联系人/设备)", placeholder="输入关键字...")
+            # 搜索
+            search_q = st.text_input("🔍 全局搜索", placeholder="输入关键字...")
             if search_q:
                 mask = final_df.astype(str).apply(lambda x: x.str.contains(search_q, case=False)).any(axis=1)
                 final_df = final_df[mask]
 
-            # --- 显示数据表格 ---
             st.write(f"共找到 {len(final_df)} 条记录")
-            st.dataframe(
-                final_df[display_cols], # 只显示指定的列
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "询价单价": st.column_config.NumberColumn(format="¥ %.2f"),
-                    "录入时间": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm"),
-                }
-            )
+            
+            # [修改] 移除了 "未找到指定列" 的警告，直接显示数据
+            if not display_cols:
+                # 如果找不到目标列，就显示所有列，不报错
+                st.dataframe(final_df, use_container_width=True)
+            else:
+                st.dataframe(
+                    final_df[display_cols],
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "询价单价": st.column_config.NumberColumn(format="¥ %.2f"),
+                        "录入时间": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm"),
+                    }
+                )
 
-            # --- 删除功能 ---
+            # 删除功能
             with st.expander("🗑️ 删除记录"):
                 if not final_df.empty:
-                    # 制作一个下拉菜单的选项列表
                     records_to_delete = final_df.to_dict('records')
-                    
                     def fmt_func(row):
-                        # 下拉框里显示的文字格式
-                        sup = row.get("供应商", "未知供应商")
-                        dev = row.get("设备类型", "未知设备")
-                        price = row.get("询价单价", 0)
-                        return f"{sup} - {dev} (¥{price})"
+                        sup = row.get("供应商", "未知")
+                        dev = row.get("设备类型", "未知")
+                        return f"{sup} - {dev}"
 
                     selected_row = st.selectbox("选择要删除的行", records_to_delete, format_func=fmt_func)
-                    
                     if st.button("确认删除"):
                         if connector.delete_record(selected_row["_record_id"]):
                             st.success("删除成功！")
                             time.sleep(1)
                             st.rerun()
-
         else:
-            st.info("表格为空，或连接失败。请先去【录入报价】页面添加数据。")
+            st.info("表格为空或连接失败。")
 
     # --- 功能 2: 录入报价 ---
     elif menu == "➕ 录入报价":
         st.title("➕ 录入新报价")
-        st.caption("请确保飞书表格中已包含以下列名，否则可能写入失败。")
+        
+        # [修改] 移除了此处关于 "缺少列" 的所有警告代码
         
         with st.form("new_entry"):
             c1, c2 = st.columns(2)
@@ -209,7 +223,6 @@ if check_login():
                 device = st.text_input("设备类型", placeholder="例如：离心泵")
             with c2:
                 price = st.number_input("询价单价 (¥)", min_value=0.0, step=100.0)
-                # 可选：如果你还需要其他字段，可以在这里加，但在“查询”页我默认隐藏了它们
                 note = st.text_area("备注", placeholder="含税/交货期/参数等")
             
             submitted = st.form_submit_button("🚀 提交")
@@ -218,50 +231,44 @@ if check_login():
                 if not supplier:
                     st.warning("请填写供应商名称")
                 else:
-                    # 构建数据字典 (Key 必须与飞书列名完全一致)
+                    # 优先使用 "询价单价"，如果飞书里没有，但有 "单价"，则改用 "单价"
+                    price_key = "询价单价"
+                    if "询价单价" not in df_columns and "单价" in df_columns:
+                        price_key = "单价"
+
                     payload = {
                         "供应商": supplier,
                         "联系人": contact,
                         "设备类型": device,
-                        "询价单价": price,  # 注意：这里改成了“询价单价”
+                        price_key: price,
                         "备注": note,
                         "录入时间": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     }
                     
-                    # 清除空值
                     clean_payload = {k: v for k, v in payload.items() if v}
                     
                     if connector.add_record(clean_payload):
                         st.success(f"✅ 已录入：{supplier} - {device}")
                         time.sleep(1)
-                        # 自动刷新页面重置表单
                         st.rerun()
 
     # --- 功能 3: 价格分析 ---
     elif menu == "📈 价格分析":
         st.title("📈 简易分析")
-        data = connector.get_records()
-        if data:
-            df = pd.DataFrame(data)
-            # 兼容改名
+        if existing_records:
+            df = pd.DataFrame(existing_records)
             if "单价" in df.columns and "询价单价" not in df.columns:
                 df.rename(columns={"单价": "询价单价"}, inplace=True)
 
             if not df.empty and "询价单价" in df.columns:
                 tab1, tab2 = st.tabs(["按供应商", "按设备类型"])
-                
                 with tab1:
                     if "供应商" in df.columns:
-                        avg_price = df.groupby("供应商")["询价单价"].mean()
-                        st.bar_chart(avg_price)
-                        st.caption("各供应商平均报价")
-                
+                        st.bar_chart(df.groupby("供应商")["询价单价"].mean())
                 with tab2:
                     if "设备类型" in df.columns:
-                        dev_price = df.groupby("设备类型")["询价单价"].mean()
-                        st.bar_chart(dev_price)
-                        st.caption("各设备类型平均报价")
+                        st.bar_chart(df.groupby("设备类型")["询价单价"].mean())
             else:
-                st.info("暂无足够数据生成图表 (需要包含'询价单价'列)")
+                st.info("数据不足以生成图表")
         else:
             st.info("暂无数据")
