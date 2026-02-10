@@ -22,6 +22,10 @@ hide_streamlit_style = """
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
+# --- 常量定义 ---
+# 用于在同一张表中区分“报价”和“考核”的标记
+ASSESSMENT_TAG = "供应商考核"
+
 # --- 登录验证功能 ---
 def check_login():
     """简单的登录验证"""
@@ -158,6 +162,11 @@ if check_login():
             if "单价" in df.columns and "询价单价" not in df.columns:
                 df.rename(columns={"单价": "询价单价"}, inplace=True)
 
+            # === 数据隔离关键逻辑 ===
+            # 如果存在设备类型列，过滤掉“供应商考核”的数据
+            if "设备类型" in df.columns:
+                df = df[df["设备类型"] != ASSESSMENT_TAG]
+
             # 想要显示的列
             target_cols = ["供应商", "联系人", "设备类型", "询价单价", "录入时间", "备注"]
             display_cols = [c for c in target_cols if c in df.columns]
@@ -223,7 +232,6 @@ if check_login():
                 if not supplier:
                     st.warning("请填写供应商名称")
                 else:
-                    # 优先使用 "询价单价"，如果飞书里没有，但有 "单价"，则改用 "单价"
                     price_key = "询价单价"
                     if "询价单价" not in df_columns and "单价" in df_columns:
                         price_key = "单价"
@@ -247,70 +255,110 @@ if check_login():
     # --- 功能 3: 供应商考核 ---
     elif menu == "📝 供应商考核":
         st.title("📝 供应商绩效考核")
-        st.info("考核结果将自动保存至数据库，请客观评分。")
         
-        # 准备供应商列表
-        supplier_list = []
-        if existing_records:
-            df_temp = pd.DataFrame(existing_records)
-            if "供应商" in df_temp.columns:
-                supplier_list = df_temp["供应商"].dropna().unique().tolist()
+        # 分为两个标签页：新建考核 和 历史记录
+        tab1, tab2 = st.tabs(["➕ 新建考核", "📜 历史考核记录"])
+        
+        # === 标签页 1: 新建考核 ===
+        with tab1:
+            st.info("考核结果将自动保存至数据库，请客观评分。")
+            
+            # 准备供应商列表 (包含考核和非考核的所有供应商，方便选择)
+            supplier_list = []
+            if existing_records:
+                df_temp = pd.DataFrame(existing_records)
+                if "供应商" in df_temp.columns:
+                    supplier_list = df_temp["供应商"].dropna().unique().tolist()
 
-        with st.form("assessment_form"):
-            # 如果有历史数据，提供下拉框，否则手填
-            if supplier_list:
-                target_supplier = st.selectbox("选择被考核供应商", supplier_list)
-            else:
-                target_supplier = st.text_input("被考核供应商名称")
-            
-            st.divider()
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                score_quality = st.slider("产品质量评分 (40%)", 0, 100, 80)
-                score_delivery = st.slider("交付及时性评分 (30%)", 0, 100, 80)
-            
-            with col2:
-                score_price = st.slider("价格竞争力评分 (20%)", 0, 100, 80)
-                score_service = st.slider("售后服务评分 (10%)", 0, 100, 80)
-            
-            comments = st.text_area("考核评语/改进建议")
-            
-            submitted = st.form_submit_button("📤 提交考核结果")
-            
-            if submitted:
-                if not target_supplier:
-                    st.warning("请选择或填写供应商名称")
+            with st.form("assessment_form"):
+                if supplier_list:
+                    target_supplier = st.selectbox("选择被考核供应商", supplier_list)
                 else:
-                    # 计算加权总分 (简单平均或加权)
-                    # 这里做简单平均展示，备注里记录详情
-                    avg_score = (score_quality + score_delivery + score_price + score_service) / 4
-                    
-                    # 构造写入备注的详细内容
-                    detail_note = (
-                        f"【年度考核】总分: {avg_score:.1f}\n"
-                        f"质量: {score_quality} | 交付: {score_delivery} | 价格: {score_price} | 服务: {score_service}\n"
-                        f"评语: {comments}"
-                    )
+                    target_supplier = st.text_input("被考核供应商名称")
+                
+                st.divider()
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    score_quality = st.slider("产品质量评分 (40%)", 0, 100, 80)
+                    score_delivery = st.slider("交付及时性评分 (30%)", 0, 100, 80)
+                
+                with col2:
+                    score_price = st.slider("价格竞争力评分 (20%)", 0, 100, 80)
+                    score_service = st.slider("售后服务评分 (10%)", 0, 100, 80)
+                
+                comments = st.text_area("考核评语/改进建议")
+                
+                submitted = st.form_submit_button("📤 提交考核结果")
+                
+                if submitted:
+                    if not target_supplier:
+                        st.warning("请选择或填写供应商名称")
+                    else:
+                        avg_score = (score_quality + score_delivery + score_price + score_service) / 4
+                        
+                        detail_note = (
+                            f"【年度考核】总分: {avg_score:.1f}\n"
+                            f"质量: {score_quality} | 交付: {score_delivery} | 价格: {score_price} | 服务: {score_service}\n"
+                            f"评语: {comments}"
+                        )
 
-                    # 智能匹配价格字段名
-                    price_key = "询价单价"
-                    if "询价单价" not in df_columns and "单价" in df_columns:
-                        price_key = "单价"
+                        price_key = "询价单价"
+                        if "询价单价" not in df_columns and "单价" in df_columns:
+                            price_key = "单价"
+                        
+                        # 标记为考核数据
+                        payload = {
+                            "供应商": target_supplier,
+                            "设备类型": ASSESSMENT_TAG, 
+                            "联系人": "考核系统",
+                            price_key: 0,
+                            "备注": detail_note,
+                            "录入时间": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        }
+                        
+                        if connector.add_record(payload):
+                            st.success(f"✅ 考核完成：{target_supplier} (总分 {avg_score:.1f})")
+                            time.sleep(1)
+                            st.rerun()
+
+        # === 标签页 2: 历史考核记录 ===
+        with tab2:
+            if existing_records:
+                df_assess = pd.DataFrame(existing_records)
+                
+                # 只保留考核数据
+                if "设备类型" in df_assess.columns:
+                    df_assess = df_assess[df_assess["设备类型"] == ASSESSMENT_TAG]
+                
+                if df_assess.empty:
+                    st.info("暂无历史考核记录")
+                else:
+                    # 显示特定列
+                    assess_cols = ["供应商", "录入时间", "备注"]
+                    final_assess = df_assess[assess_cols].copy() if set(assess_cols).issubset(df_assess.columns) else df_assess
                     
-                    # 构造Payload
-                    # 为了利用现有表格结构，将“设备类型”标记为“供应商考核”
-                    # 价格设为0避免影响成本统计
-                    payload = {
-                        "供应商": target_supplier,
-                        "设备类型": "供应商考核", 
-                        "联系人": "考核系统",
-                        price_key: 0,
-                        "备注": detail_note,
-                        "录入时间": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    }
+                    st.dataframe(
+                        final_assess,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "录入时间": st.column_config.DatetimeColumn(format="YYYY-MM-DD"),
+                            "备注": st.column_config.TextColumn("考核详情", width="large")
+                        }
+                    )
                     
-                    if connector.add_record(payload):
-                        st.success(f"✅ 考核完成：{target_supplier} (总分 {avg_score:.1f})")
-                        time.sleep(1)
-                        st.rerun()
+                    # 考核记录删除功能
+                    with st.expander("🗑️ 删除考核记录"):
+                        records_del = df_assess.to_dict('records')
+                        def assess_fmt(row):
+                            return f"{row.get('供应商')} - {row.get('录入时间')} "
+                        
+                        sel_del = st.selectbox("选择记录删除", records_del, format_func=assess_fmt)
+                        if st.button("确认删除考核"):
+                            if connector.delete_record(sel_del["_record_id"]):
+                                st.success("删除成功")
+                                time.sleep(1)
+                                st.rerun()
+            else:
+                st.info("暂无数据")
