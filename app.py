@@ -24,32 +24,27 @@ def check_login():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.title("🔐 系统登录")
-        st.info("")
-        
         with st.form("login_form"):
             username = st.text_input("账号")
             password = st.text_input("密码", type="password")
             submitted = st.form_submit_button("登录")
 
             if submitted:
-                # 优先从 Secrets 读取 [credentials] 配置
                 valid_users = st.secrets.get("credentials", {"admin": "123456"})
-                
                 if username in valid_users and valid_users[username] == password:
                     st.session_state.authenticated = True
                     st.success("登录成功！")
                     time.sleep(0.5)
                     st.rerun()
                 else:
-                    st.error("账号或密码错误，请重试。")
-    
+                    st.error("账号或密码错误。")
     return False
 
 # --- 飞书 API 工具类 ---
 class FeishuConnector:
     def __init__(self):
         if "feishu" not in st.secrets:
-            st.error("未找到飞书配置！请在 Secrets 中配置 app_id, app_secret, app_token, table_id。")
+            st.error("未找到飞书配置！请在 Secrets 中配置。")
             st.stop()
         
         self.app_id = st.secrets["feishu"]["app_id"]
@@ -61,15 +56,11 @@ class FeishuConnector:
 
     def get_token(self):
         headers = {"Content-Type": "application/json; charset=utf-8"}
-        data = {
-            "app_id": self.app_id,
-            "app_secret": self.app_secret
-        }
-        response = requests.post(self.token_url, headers=headers, json=data)
-        if response.status_code == 200:
+        data = {"app_id": self.app_id, "app_secret": self.app_secret}
+        try:
+            response = requests.post(self.token_url, headers=headers, json=data)
             return response.json().get("tenant_access_token")
-        else:
-            st.error(f"获取 Token 失败: {response.text}")
+        except:
             return None
 
     def get_records(self):
@@ -82,7 +73,6 @@ class FeishuConnector:
         try:
             response = requests.get(self.base_url, headers=headers, params=params)
             res_json = response.json()
-            
             if res_json.get("code") == 0:
                 items = res_json["data"]["items"]
                 clean_data = []
@@ -95,43 +85,24 @@ class FeishuConnector:
                 st.error(f"读取数据失败: {res_json.get('msg')}")
                 return []
         except Exception as e:
-            st.error(f"网络请求错误: {e}")
+            st.error(f"请求错误: {e}")
             return []
 
     def add_record(self, data_dict):
         token = self.get_token()
         if not token: return False
         
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json; charset=utf-8"
-        }
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json; charset=utf-8"}
         payload = {"fields": data_dict}
-        
         response = requests.post(self.base_url, headers=headers, json=payload)
-        res_json = response.json()
-        
-        if res_json.get("code") == 0:
-            return True
-        else:
-            st.error(f"写入失败: {res_json.get('msg')}")
-            return False
+        return response.json().get("code") == 0
 
     def delete_record(self, record_id):
         token = self.get_token()
         if not token: return False
-        
         headers = {"Authorization": f"Bearer {token}"}
-        delete_url = f"{self.base_url}/{record_id}"
-        
-        response = requests.delete(delete_url, headers=headers)
-        res_json = response.json()
-        
-        if res_json.get("code") == 0:
-            return True
-        else:
-            st.error(f"删除失败: {res_json.get('msg')}")
-            return False
+        response = requests.delete(f"{self.base_url}/{record_id}", headers=headers)
+        return response.json().get("code") == 0
 
 # ==========================================
 #  主程序逻辑
@@ -142,16 +113,16 @@ if check_login():
 
     st.sidebar.title("🐼 飞书云数据库")
     
+    # --- 调试工具 ---
+    with st.sidebar.expander("🔧 调试模式 (列名检查)"):
+        st.write("如果你发现数据没显示，可能是飞书里的列名和代码不一致。")
+        show_debug = st.checkbox("显示原始列名")
+
     if st.sidebar.button("🚪 退出登录"):
         st.session_state.authenticated = False
         st.rerun()
         
     menu = st.sidebar.radio("功能菜单", ["📊 数据查询", "➕ 录入报价", "📈 价格分析"])
-    st.sidebar.markdown("---")
-    st.sidebar.caption("数据源：飞书多维表格")
-
-    # 定义部门列表
-    DEPARTMENTS = ["电力物联网中心", "数字化中心", "信通和镇江分公司"]
 
     # --- 功能 1: 数据查询 ---
     if menu == "📊 数据查询":
@@ -163,153 +134,135 @@ if check_login():
         if data:
             df = pd.DataFrame(data)
             
-            # 这里的列名必须与飞书多维表格中的列名完全一致
-            cols = ["序号", "所属部门", "项目地点", "设备类型", "设备数量", "单价", "中标合同额", "供货日期", "采购建议", "供应商", "询价单价", "询价总价", "联系人", "录入时间", "备注", "_record_id"]
-            
-            # 确保列存在
-            available_cols = [c for c in cols if c in df.columns]
-            df = df[available_cols]
+            # --- 调试显示 ---
+            if show_debug:
+                st.info(f"飞书返回的实际列名: {list(df.columns)}")
+                st.write("请确保飞书里的列名与下方录入代码中的字段一致。")
 
-            # 使用 Tabs 划分三个部门
-            tabs = st.tabs(DEPARTMENTS)
+            # 检查关键列是否存在
+            has_dept = "所属部门" in df.columns
             
-            for i, dept_name in enumerate(DEPARTMENTS):
-                with tabs[i]:
-                    st.header(f"📁 {dept_name} 数据")
-                    
-                    # 筛选对应部门的数据
-                    if "所属部门" in df.columns:
+            if not has_dept:
+                st.warning("⚠️ 未检测到【所属部门】列。暂时显示全部数据，请去飞书添加该列以启用分类功能。")
+                # 如果没有部门列，直接显示整个表格
+                st.dataframe(df.drop(columns=["_record_id"], errors="ignore"), use_container_width=True)
+                
+            else:
+                # 如果有部门列，使用 Tabs 分类
+                depts = list(df["所属部门"].dropna().unique())
+                if not depts:
+                    depts = ["暂无部门数据"]
+                
+                tabs = st.tabs(depts)
+                
+                for i, dept_name in enumerate(depts):
+                    with tabs[i]:
+                        # 筛选数据
                         dept_df = df[df["所属部门"] == dept_name]
-                    else:
-                        dept_df = pd.DataFrame(columns=available_cols)
-                        if i == 0: st.warning("⚠️ 警告：检测到飞书表格缺少【所属部门】列，无法进行分类筛选。请去飞书添加该列。")
+                        
+                        # 搜索功能
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            search_q = st.text_input(f"🔍 搜索 ({dept_name})", key=f"s_{i}")
+                        
+                        if search_q:
+                            # 模糊搜索所有列
+                            mask = dept_df.astype(str).apply(lambda x: x.str.contains(search_q, case=False)).any(axis=1)
+                            dept_df = dept_df[mask]
 
-                    # 部门内的搜索
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        # 加上key避免组件ID冲突
-                        search_supplier = st.text_input(f"🔍 搜索供应商 ({dept_name})", key=f"search_s_{i}")
-                    with c2:
-                        search_equipment = st.text_input(f"🔍 搜索设备类型 ({dept_name})", key=f"search_e_{i}")
-                    
-                    if search_supplier:
-                        dept_df = dept_df[dept_df['供应商'].astype(str).str.contains(search_supplier, case=False)]
-                    if search_equipment and '设备类型' in dept_df.columns:
-                        dept_df = dept_df[dept_df['设备类型'].astype(str).str.contains(search_equipment, case=False)]
-                    
-                    # 展示表格
-                    display_df = dept_df.drop(columns=["_record_id"], errors='ignore')
-                    st.dataframe(display_df, use_container_width=True, hide_index=True)
+                        # 显示表格 (自动显示所有列，不再硬编码过滤)
+                        st.dataframe(
+                            dept_df.drop(columns=["_record_id"], errors="ignore"), 
+                            use_container_width=True,
+                            hide_index=True
+                        )
 
-                    # 删除功能
-                    with st.expander(f"🗑️ 管理 {dept_name} 数据"):
-                        if not dept_df.empty and "_record_id" in dept_df.columns:
-                            record_options = dept_df.to_dict('records')
-                            def format_func(option):
-                                supplier = option.get('供应商', '未命名')
-                                device = option.get('设备类型', '未知设备')
-                                price = option.get('单价', 0)
-                                return f"{supplier} - {device} (￥{price})"
-                            
-                            selected_record = st.selectbox("选择要删除的记录", options=record_options, format_func=format_func, key=f"del_sel_{i}")
-                            
-                            if st.button("确认删除", key=f"del_btn_{i}"):
-                                if connector.delete_record(selected_record["_record_id"]):
-                                    st.success("删除成功！")
-                                    time.sleep(1)
-                                    st.rerun()
-                        else:
-                            st.info("当前分类下暂无数据可管理")
-
+                        # 删除功能
+                        with st.expander(f"🗑️ 删除 {dept_name} 的记录"):
+                            if not dept_df.empty:
+                                options = dept_df.to_dict('records')
+                                # 尝试智能生成显示名称
+                                def fmt(opt):
+                                    # 尝试找一些常见的名字作为标签
+                                    name = opt.get("设备类型") or opt.get("设备名称") or opt.get("项目地点") or "未知项"
+                                    price = opt.get("单价") or opt.get("中标合同额") or "0"
+                                    return f"{name} (￥{price})"
+                                
+                                sel = st.selectbox("选择记录", options, format_func=fmt, key=f"d_{i}")
+                                if st.button("确认删除", key=f"btn_{i}"):
+                                    if connector.delete_record(sel["_record_id"]):
+                                        st.success("删除成功")
+                                        time.sleep(1)
+                                        st.rerun()
         else:
-            st.info("表格为空，或连接飞书失败。请先录入数据。")
+            st.info("表格为空，或连接失败。")
 
     # --- 功能 2: 录入报价 ---
     elif menu == "➕ 录入报价":
         st.title("➕ 录入新报价")
+        st.caption("注意：此处修改仅影响新录入的数据，不会自动修改旧数据的列名。")
         
-        # 部门选择器（放在表单外，明确分类）
-        st.subheader("1. 选择所属部门")
-        selected_dept = st.selectbox("请选择数据归属部门", DEPARTMENTS)
-        
-        st.subheader("2. 填写详细信息")
-        with st.form("feishu_entry"):
-            # 第一行
-            c1, c2, c3 = st.columns(3)
+        with st.form("new_entry"):
+            c1, c2 = st.columns(2)
             with c1:
-                seq_num = st.text_input("序号")
-                project_loc = st.text_input("项目地点")
-                device_type = st.text_input("设备类型")
+                # 这里的 label 就是写入飞书的 key
+                # 如果飞书里叫 "设备名称"，这里就得改叫 "设备名称"
+                dept = st.text_input("所属部门", placeholder="例如：电力物联网中心")
+                project = st.text_input("项目地点")
+                device = st.text_input("设备类型") 
             with c2:
                 supplier = st.text_input("供应商")
-                contact = st.text_input("联系人")
-                supply_date = st.text_input("供货日期 (选填)")
-            with c3:
-                device_count = st.number_input("设备数量", min_value=0, step=1)
-                purchase_advice = st.text_input("采购建议")
+                price = st.number_input("单价", min_value=0.0)
+                count = st.number_input("设备数量", min_value=0, step=1)
             
-            st.markdown("---")
-            # 第二行：价格相关
-            c4, c5, c6, c7 = st.columns(4)
-            with c4:
-                unit_price = st.number_input("单价 (中标)", min_value=0.0)
-            with c5:
+            # 更多可选字段
+            with st.expander("更多详细信息"):
                 contract_amt = st.number_input("中标合同额", min_value=0.0)
-            with c6:
-                inquiry_unit = st.number_input("询价单价", min_value=0.0)
-            with c7:
-                inquiry_total = st.number_input("询价总价", min_value=0.0)
-            
-            note = st.text_area("备注")
-            submitted = st.form_submit_button("🚀 提交到飞书")
-            
+                date = st.text_input("供货日期")
+                contact = st.text_input("联系人")
+                note = st.text_area("备注")
+
+            submitted = st.form_submit_button("🚀 提交")
+
             if submitted:
-                # 必填项检查
-                if supplier and device_type:
-                    payload = {
-                        "所属部门": selected_dept,  # 写入选择的部门
-                        "序号": seq_num,
-                        "项目地点": project_loc,
-                        "设备类型": device_type,
-                        "设备数量": device_count,
-                        "单价": unit_price,
-                        "中标合同额": contract_amt,
-                        "供货日期": supply_date,
-                        "采购建议": purchase_advice,
-                        "供应商": supplier,
-                        "询价单价": inquiry_unit,
-                        "询价总价": inquiry_total,
-                        "联系人": contact,
-                        "备注": note,
-                        "录入时间": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    }
-                    if connector.add_record(payload):
-                        st.success(f"已同步至飞书 [{selected_dept}]：{supplier} - {device_type}")
-                else:
-                    st.warning("请至少填写 '供应商' 和 '设备类型'")
+                # 构建数据字典
+                payload = {
+                    "所属部门": dept,
+                    "项目地点": project,
+                    "设备类型": device,
+                    "供应商": supplier,
+                    "单价": price,
+                    "设备数量": count,
+                    "中标合同额": contract_amt,
+                    "供货日期": date,
+                    "联系人": contact,
+                    "备注": note,
+                    "录入时间": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }
+                
+                # 清除空值，防止写入错误
+                clean_payload = {k: v for k, v in payload.items() if v}
+                
+                if connector.add_record(clean_payload):
+                    st.success("✅ 写入成功！如果表格里没显示，请检查飞书列名是否与上方输入框标题一致。")
 
     # --- 功能 3: 价格分析 ---
     elif menu == "📈 价格分析":
-        st.title("📈 数据分析")
+        st.title("📈 简易分析")
         data = connector.get_records()
         if data:
             df = pd.DataFrame(data)
-            
-            # 增加部门筛选器
-            st.subheader("部门分析筛选")
-            dept_filter = st.multiselect("选择要分析的部门", DEPARTMENTS, default=DEPARTMENTS)
-            
-            if "所属部门" in df.columns:
-                df = df[df["所属部门"].isin(dept_filter)]
-            
-            # 图表
             if not df.empty:
-                if "单价" in df.columns and "设备类型" in df.columns:
-                    st.subheader("设备类型 vs 中标单价")
-                    df['单价'] = pd.to_numeric(df['单价'], errors='coerce')
-                    st.bar_chart(df, x="设备类型", y="单价")
+                # 尝试智能识别数值列
+                num_cols = df.select_dtypes(include=['float', 'int']).columns.tolist()
+                # 尝试识别文本列
+                text_cols = df.select_dtypes(include=['object']).columns.tolist()
+                
+                if num_cols and text_cols:
+                    x_axis = st.selectbox("选择X轴 (分类)", text_cols, index=0)
+                    y_axis = st.selectbox("选择Y轴 (数值)", num_cols, index=0)
+                    st.bar_chart(df, x=x_axis, y=y_axis)
                 else:
-                    st.info("数据字段不足，无法生成图表。")
+                    st.write("数据格式不足以生成图表 (需要至少一列数字和一列文本)")
             else:
-                st.info("所选部门暂无数据。")
-
+                st.info("暂无数据")
