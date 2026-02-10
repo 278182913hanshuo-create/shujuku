@@ -12,51 +12,25 @@ st.set_page_config(
     initial_sidebar_state="expanded"  # <--- 保持：默认展开侧边栏
 )
 
-# --- 关键修改：CSS 点击穿透方案 ---
+# --- 关键修改：恢复顶部栏显示 ---
+# 移除了之前隐藏 Header 和 Toolbar 的代码，现在：
+# 1. 左上角的侧边栏开关 (>) 会正常显示和点击。
+# 2. 右上角的功能菜单 (三个点) 会正常显示。
 hide_streamlit_style = """
 <style>
-    /* 1. 隐藏顶部的彩色装饰条 */
+    /* 1. 隐藏顶部的彩色装饰条 (可选) */
     [data-testid="stDecoration"] {
         display: none;
     }
     
-    /* 2. 隐藏右上角的工具栏 (Deploy, 三个点菜单, GitHub等) */
-    [data-testid="stToolbar"] {
-        display: none !important;
-    }
-    
-    /* 3. 隐藏底部的 Footer */
+    /* 2. 隐藏底部的 "Made with Streamlit" Footer */
     footer {
         display: none !important;
     }
-
-    /* 4. 关键：将 Header 设为透明且“点击穿透” */
-    /* pointer-events: none 表示鼠标点击这个区域时，事件会穿透过去，不会被透明层挡住 */
-    header[data-testid="stHeader"] {
-        background: transparent;
-        border-bottom: none;
-        pointer-events: none; 
-    }
     
-    /* 5. 核心修复：单独恢复侧边栏开关的点击功能 */
-    /* pointer-events: auto 表示这个按钮可以接收点击 */
-    [data-testid="stSidebarCollapsedControl"] {
-        display: block !important;
-        visibility: visible !important;
-        pointer-events: auto !important; 
-        color: #1f1f1f !important; /* 深黑色图标 */
-        background-color: rgba(255, 255, 255, 0.8); /* 半透明白色背景，防止被下方内容干扰 */
-        border-radius: 4px;
-        padding: 4px;
-        z-index: 1000000 !important;
-    }
-    
-    /* 兼容旧版本 Streamlit 的 ID */
-    [data-testid="collapsedControl"] {
-        display: block !important;
-        visibility: visible !important;
-        pointer-events: auto !important;
-        z-index: 1000000 !important;
+    /* 3. 隐藏 Deploy 按钮 (如果不需要部署按钮可保留此行，否则可删除) */
+    .stDeployButton {
+        display: none;
     }
 </style>
 """
