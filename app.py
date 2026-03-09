@@ -129,7 +129,30 @@ class FeishuConnector:
             st.error("网络请求出错")
             return False
 
+    def update_record(self, record_id, data_dict):
+        """【新增】更新指定记录"""
+        token = self.get_token()
+        if not token: return False
+        
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json; charset=utf-8"}
+        payload = {"fields": data_dict}
+        url = f"{self.base_url}/{record_id}"
+        
+        try:
+            response = requests.put(url, headers=headers, json=payload)
+            res_json = response.json()
+            
+            if res_json.get("code") == 0:
+                return True
+            else:
+                st.error(f"❌ 更新失败：{res_json.get('msg')}")
+                return False
+        except Exception:
+            st.error("网络请求出错")
+            return False
+
     def delete_record(self, record_id):
+        """删除记录"""
         token = self.get_token()
         if not token: return False
         headers = {"Authorization": f"Bearer {token}"}
@@ -181,21 +204,57 @@ if check_login():
                 mask = final_df.astype(str).apply(lambda x: x.str.contains(search_q, case=False)).any(axis=1)
                 final_df = final_df[mask]
 
-            st.write(f"共找到 {len(final_df)} 条记录")
-            
-            if not display_cols:
-                st.dataframe(final_df, use_container_width=True)
-            else:
-                st.dataframe(
-                    final_df[display_cols],
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "询价单价": st.column_config.NumberColumn(format="¥ %.2f"),
-                        "录入时间": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm"),
-                    }
-                )
+            # 重置索引，为了后续与 st.data_editor 返回的行号对齐
+            final_df = final_df.reset_index(drop=True)
 
+            st.write(f"共找到 **{len(final_df)}** 条记录。💡 **提示：直接双击下方表格的单元格即可修改内容，修改完成后请点击下方的“保存修改”按钮。**")
+            
+            # 【核心修改】将 st.dataframe 替换为 st.data_editor 以支持在线修改
+            editor_data = final_df[display_cols] if display_cols else final_df
+            
+            st.data_editor(
+                editor_data,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "询价单价": st.column_config.NumberColumn(format="¥ %.2f"),
+                    "录入时间": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm", disabled=True), # 录入时间通常不允许被修改
+                },
+                key="db_editor"  # 设置 key 追踪修改状态
+            )
+
+            # --- 保存修改按钮 ---
+            if st.button("💾 保存表格修改", type="primary"):
+                # 获取被修改的数据
+                edits = st.session_state.get("db_editor", {}).get("edited_rows", {})
+                
+                if not edits:
+                    st.warning("您还没有修改任何单元格。请双击表格编辑后再点击保存。")
+                else:
+                    success_count = 0
+                    with st.spinner("正在将修改同步至飞书数据库..."):
+                        for idx_str, changes in edits.items():
+                            idx = int(idx_str)
+                            real_record_id = final_df.iloc[idx]["_record_id"]
+                            
+                            payload = {}
+                            for col, val in changes.items():
+                                # 将 UI 显示的“询价单价”映射回飞书真实的“单价”字段
+                                if col == "询价单价" and "单价" in df_columns and "询价单价" not in df_columns:
+                                    payload["单价"] = val
+                                else:
+                                    payload[col] = val
+                            
+                            if payload:
+                                if connector.update_record(real_record_id, payload):
+                                    success_count += 1
+                                    
+                    if success_count > 0:
+                        st.success(f"✅ 成功更新了 {success_count} 条记录！")
+                        time.sleep(1)
+                        st.rerun()
+
+            # --- 删除功能 ---
             with st.expander("🗑️ 删除记录"):
                 if not final_df.empty:
                     records_to_delete = final_df.to_dict('records')
